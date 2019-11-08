@@ -2,16 +2,15 @@
 
 import numpy as np
 
-# Generic Extended Information Filter Approach (From Probablistic Robotics)
+# Generic GraphSLAM Filter Approach (From Probablistic Robotics)
 
-class EIF:
-    def __init__(self, c, n, g, h, dt=0.1, x0=np.array([[-5], [0], [90*np.pi/180.0]])):
-        self.u = np.zeros([2, 1])               # input command history
-        self.z = np.zeros([n, 1])               # measurement history
-        self.mu = np.copy(x0)                   # state mean vector
-        self.mu_bar = np.copy(x0)               # state mean prediction vector
-        self.cov = np.eye(3) * 0.1              # state covariance
-        self.cov_bar = np.eye(3) * 0.1          # state covariance prediction
+class graphSLAM:
+    def __init__(self, c, n, g, h, length, dt=0.1, x0=np.array([[-5], [0], [90*np.pi/180.0]])):
+        self.mu = np.zeros((3, int(length)))
+        self.mu[:, 0] = x0[:, 0]
+
+        self.cov = np.eye(3) * 0.1
+        self.cov_bar = np.eye(3) * 0.1
         self.inf_mat = np.linalg.inv(self.cov)
         self.inf_mat_bar = np.linalg.inv(self.cov_bar)
         self.inf_vec = np.zeros([3, 1])
@@ -22,6 +21,8 @@ class EIF:
         self.R = np.eye(3)
         self.V = np.zeros([3, 2])
         self.M = np.zeros([2, 2])
+
+        # Noise params
         self.sig_r = 0.2
         self.sig_phi = 0.1
         self.sig_v = 0.15
@@ -42,9 +43,37 @@ class EIF:
         self.g = g
         self.h = h
 
-    def Propogate(self, u, z):
-        self.PredictState(u)
-        self.AddMeasurement(z)
+    def Run(self, u, z):
+        self.Initialize(u)
+        converged = False
+        while ~converged:
+            self.Linearize(u, z)
+            self.Reduce()
+            self.Solve()
+            converged = self.CheckConvergence()
+            pass
+
+
+    def Initialize(self, u):
+        for i in range(1, u.shape[1]):
+            self.mu[:, i] = self.g(u[:, i], self.mu[:, i-1])
+            pass
+    
+    def Linearize(self, u, z):
+        pass
+    
+    def Reduce(self, u):
+        pass
+
+    def Solve(self, u):
+        pass
+    
+    def CheckConvergence(self, u):
+        return False   
+
+# -------------OLD STUFF-----------------
+
+
 
     def PredictState(self, u):
         theta = (self.mu[2])[0]

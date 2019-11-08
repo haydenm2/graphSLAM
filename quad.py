@@ -44,7 +44,7 @@ class Quad:
         self.sig_w = 0.1
 
         # Load Truth Data
-        data = loadmat('midterm_data.mat')
+        data = loadmat('test_data.mat')
         self.t = data['t']
         self.c = (data['m']).transpose()
         self.x = data['X_tr']

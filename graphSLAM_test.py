@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from eif import EIF
+from graphSLAM import graphSLAM
 from quad import Quad
 import numpy as np
 import matplotlib.pyplot as plt
@@ -68,29 +68,27 @@ if __name__ == "__main__":
     quad = Quad()       # Quadrotor model object
 
     # Information Filter Init
-    eif = EIF(quad.c, quad.nl, quad.g, quad.h)
+    graphslam = graphSLAM(quad.c, quad.nl, quad.g, quad.h, quad.u.shape[1])
 
     body_radius = 0.3
     fig, lines, lines_est, msensor, robot_body, robot_head = InitPlot(quad, body_radius)
-    mu = eif.mu
-    inf_vec = eif.inf_vec
-    two_sig_x = np.array([[2 * np.sqrt(eif.cov.item((0, 0)))], [-2 * np.sqrt(eif.cov.item((0, 0)))]])
-    two_sig_y = np.array([[2 * np.sqrt(eif.cov.item((1, 1)))], [-2 * np.sqrt(eif.cov.item((1, 1)))]])
-    two_sig_theta = np.array([[2 * np.sqrt(eif.cov.item((2, 2)))], [-2 * np.sqrt(eif.cov.item((2, 2)))]])
-    for i in range(int(quad.t_end/quad.dt)):
-        # truth model updates
-        quad.Propagate()
-        eif.Propogate(quad.Getu(), quad.Getz())
+    mu = graphslam.mu
+    inf_vec = graphslam.inf_vec
+    two_sig_x = np.array([[2 * np.sqrt(graphslam.cov.item((0, 0)))], [-2 * np.sqrt(graphslam.cov.item((0, 0)))]])
+    two_sig_y = np.array([[2 * np.sqrt(graphslam.cov.item((1, 1)))], [-2 * np.sqrt(graphslam.cov.item((1, 1)))]])
+    two_sig_theta = np.array([[2 * np.sqrt(graphslam.cov.item((2, 2)))], [-2 * np.sqrt(graphslam.cov.item((2, 2)))]])
 
-        # plotter updates
-        mu = np.hstack((mu, eif.mu))
-        inf_vec = np.hstack((inf_vec, eif.inf_vec))
-        zpos = quad.Getzpos()  # Perceived sensed landmark plotting values
-        if live_plot:
-            UpdatePlot(fig, lines, lines_est, msensor, robot_body, body_radius, robot_head, quad, mu, zpos)
-        two_sig_x = np.hstack((two_sig_x, np.array([[2 * np.sqrt(eif.cov.item((0, 0)))], [-2 * np.sqrt(eif.cov.item((0, 0)))]])))
-        two_sig_y = np.hstack((two_sig_y, np.array([[2 * np.sqrt(eif.cov.item((1, 1)))], [-2 * np.sqrt(eif.cov.item((1, 1)))]])))
-        two_sig_theta = np.hstack((two_sig_theta, np.array([[2 * np.sqrt(eif.cov.item((2, 2)))], [-2 * np.sqrt(eif.cov.item((2, 2)))]])))
+    graphslam.Run(quad.u, quad.Getz())
+
+        # # plotter updates
+        # mu = np.hstack((mu, graphslam.mu))
+        # inf_vec = np.hstack((inf_vec, graphslam.inf_vec))
+        # zpos = quad.Getzpos()  # Perceived sensed landmark plotting values
+        # if live_plot:
+        #     UpdatePlot(fig, lines, lines_est, msensor, robot_body, body_radius, robot_head, quad, mu, zpos)
+        # two_sig_x = np.hstack((two_sig_x, np.array([[2 * np.sqrt(graphslam.cov.item((0, 0)))], [-2 * np.sqrt(graphslam.cov.item((0, 0)))]])))
+        # two_sig_y = np.hstack((two_sig_y, np.array([[2 * np.sqrt(graphslam.cov.item((1, 1)))], [-2 * np.sqrt(graphslam.cov.item((1, 1)))]])))
+        # two_sig_theta = np.hstack((two_sig_theta, np.array([[2 * np.sqrt(graphslam.cov.item((2, 2)))], [-2 * np.sqrt(graphslam.cov.item((2, 2)))]])))
 
     if ~live_plot:
         UpdatePlot(fig, lines, lines_est, msensor, robot_body, body_radius, robot_head, quad, mu, zpos)
