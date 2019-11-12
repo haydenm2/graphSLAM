@@ -4,36 +4,39 @@ import sys
 import pdb
 
 class Robot():
-    def __init__(self, data_file):
-        self.save_data(data_file)
-
-        # measurement noise
-        std_dev_range = .1      # m
-        std_dev_bearing = .05   # rad
-        var_range = std_dev_range * std_dev_range
-        var_bearing = std_dev_bearing * std_dev_bearing
-        self.Q_t = np.array([
-                                [ var_range, 0 ],
-                                [ 0,         var_bearing ]
-                            ])
+    def __init__(self, data_file=None):
+        self.use_file_motion_model = data_file is not None
+        self.create_data(data_file)
 
         # 3 dimensions for pose, and dimension for each landmark
         d = (self.num_states*3) + (self.num_lm*2)
         self.info_matrix = np.zeros((d,d))
         self.info_vec = np.zeros(d)
 
-    def save_data(self, file):
-        file = None
-        if file is not None:
+    def create_data(self, file):
+        self.world_bounds = [-15,20]
+
+        std_dev_range = .1      # m
+        std_dev_bearing = .05   # rad
+
+        if self.use_file_motion_model:
+            self.world_bounds = [-17, 17]
+
+            std_dev_range = .2
+            std_dev_bearing = .1
+
             f = loadmat(file)
+            
             # true states (x, y, theta)
             self.X_tr = f['X_tr']
             self.num_states = self.X_tr.shape[1]
+            
             # measurements for true states (includes measurement noise)
             self.range_tr = f['range_tr']
             self.bearing_tr = f['bearing_tr']
             assert(self.range_tr.shape == self.bearing_tr.shape)
             self.num_measurements = self.range_tr.shape[0]
+            
             # command velocities
             self.v_c = f['v_c']
             self.om_c = f['om_c']
@@ -47,21 +50,24 @@ class Robot():
             self.om = self.om[0,:]
             assert((self.v_c.size == self.om_c.size) and (self.v.size == self.v_c.size))
             self.num_controls = self.v.size
+            
             # times
             self.t = f['t']
             self.t = self.t[0,:]
             # timestep
             self.dt = self.t[1] - self.t[0]
+            
             # landmarks
             lms = f['m']
             self.lm_x = lms[0,:]
             self.lm_y = lms[1,:]
             assert(self.lm_x.size == self.lm_y.size)
             self.num_lm = self.lm_x.size
-            pdb.set_trace()
-        else:
-            self.world_bounds = [-15,20]
-            
+
+            # belief and initial condition
+            self.mu = np.zeros(self.X_tr.shape)
+            self.mu[:,0] = self.X_tr[:,0]
+        else:            
             # noise in the command velocities (translational and rotational)
             self.a_1 = .1
             self.a_2 = .01
@@ -75,7 +81,7 @@ class Robot():
 
             # command velocities
             self.v_c = 1 + (.5*np.cos(2*np.pi*.2*self.t))
-            self.om_c = -.2 + (2*np.cos(2*np.pi*1*self.t))
+            self.om_c = -.2 + (2*np.cos(2*np.pi*.6*self.t))
             assert(self.v_c.size == self.om_c.size)
             # actual velocities (with noise)
             self.v = self.v_c + \
@@ -97,8 +103,8 @@ class Robot():
 
             # landmarks
             num_landmarks = 20
-            world_markers = np.random.randint(low=self.world_bounds[0]+1, 
-                high=self.world_bounds[1], size=(2,num_landmarks))
+            world_markers = np.random.randint(low=self.world_bounds[0]+2, 
+                high=self.world_bounds[1]-1, size=(2,num_landmarks))
             self.lm_x = world_markers[0,:]
             self.lm_y = world_markers[1,:]
             assert(self.lm_x.size == self.lm_y.size)
@@ -117,6 +123,14 @@ class Robot():
                     self.range_tr[i,j] = r
                     self.bearing_tr[i,j] = b
 
+        # measurement noise
+        var_range = std_dev_range * std_dev_range
+        var_bearing = std_dev_bearing * std_dev_bearing
+        self.Q_t = np.array([
+                                [ var_range, 0 ],
+                                [ 0,         var_bearing ]
+                            ])
+
     def motion_model(self, ctrl_time, use_truth=False):
         ''' 
         samples the motion model with control at time ctrl_time.
@@ -132,13 +146,21 @@ class Robot():
             angular_vel = self.om[ctrl_time]
             theta = self.X_tr[-1,ctrl_time-1]
 
-        ratio = vel / angular_vel
-        angular_step = theta + (angular_vel*self.dt)
-        motion_vec = np.array([
-                                (-ratio * np.sin(theta)) + (ratio * np.sin(angular_step)),
-                                (ratio * np.cos(theta)) - (ratio * np.cos(angular_step)),
-                                angular_vel * self.dt
-                            ])
+        motion_vec = None
+        if self.use_file_motion_model:
+            motion_vec = np.array([
+                                    vel * np.cos(theta) * self.dt,
+                                    vel * np.sin(theta) * self.dt,
+                                    angular_vel * self.dt
+                                ])
+        else:
+            ratio = vel / angular_vel
+            angular_step = theta + (angular_vel*self.dt)
+            motion_vec = np.array([
+                                    (-ratio * np.sin(theta)) + (ratio * np.sin(angular_step)),
+                                    (ratio * np.cos(theta)) - (ratio * np.cos(angular_step)),
+                                    angular_vel * self.dt
+                                ])
 
         if use_truth:
             return self.X_tr[:,ctrl_time-1] + motion_vec
@@ -152,32 +174,39 @@ class Robot():
         '''
         vel = self.v_c[ctrl_time]
         theta = self.mu[-1,ctrl_time-1]
-        return np.array([
-                            [1, 0, -vel * np.sin(theta) * self.dt],
-                            [0, 1,  vel * np.cos(theta) * self.dt],
-                            [0, 0,  1]
-                        ])
 
-    # def get_V(self, ctrl_time):
-    #     '''
-    #     returns V_t corresponding to the time ctrl_time.
-    #     the predicted state at ctrl_time-1 must be defined
-    #     '''
-    #     theta = self.mu[-1,ctrl_time-1]
-    #     return np.array([
-    #                         [ np.cos(theta)*self.dt, 0 ],
-    #                         [ np.sin(theta)*self.dt, 0 ],
-    #                         [ 0,                     self.dt ]
-    #                     ])
+        if self.use_file_motion_model:
+            return np.array([
+                                [1, 0, -vel * np.sin(theta) * self.dt],
+                                [0, 1,  vel * np.cos(theta) * self.dt],
+                                [0, 0,  1]
+                            ])
+        
+        angular_vel = self.om_c[ctrl_time]
+        ratio = vel / angular_vel
+        angular_step = theta + (angular_vel*self.dt)
+        return np.array([
+                        [1, 0, ( -ratio*np.cos(theta) ) + ( ratio*np.cos(angular_step) ) ],
+                        [0, 1, ( -ratio*np.sin(theta) ) + ( ratio*np.sin(angular_step) ) ],
+                        [0, 0, 1]
+                        ])
 
     def get_V(self, ctrl_time):
         '''
         returns V_t corresponding to the time ctrl_time.
         the predicted state at ctrl_time-1 must be defined
         '''
+        angle = self.mu[-1,ctrl_time-1]
+
+        if self.use_file_motion_model:
+            return np.array([
+                                [ np.cos(angle)*self.dt, 0 ],
+                                [ np.sin(angle)*self.dt, 0 ],
+                                [ 0,                     self.dt ]
+                            ])
+
         v = self.v_c[ctrl_time]
         w = self.om_c[ctrl_time]
-        angle = self.mu[-1,ctrl_time-1]
         angular_step = angle + (w*self.dt)
 
         v_0_0 = ( -np.sin(angle) + np.sin(angular_step) ) / w
@@ -193,6 +222,14 @@ class Robot():
                         ])
 
     def get_M(self, ctrl_time):
+        if self.use_file_motion_model:
+            std_dev_v = .15 # m/s
+            std_dev_om = .1 # rad/s
+            return np.array([
+                                [std_dev_v, 0],
+                                [0, std_dev_om]
+                            ])
+
         v = self.v_c[ctrl_time]
         w = self.om_c[ctrl_time]
         return np.array([
@@ -301,7 +338,7 @@ class Robot():
         self.linearize_measurements()
 
     def run_slam(self):
-        # self.initialize()
+        self.initialize()
         converged = False
         while not converged:
             self.linearize()
