@@ -265,8 +265,14 @@ class Robot():
             
             G_t = self.get_G(i)
 
+            R_inv = None
+            try:
+                R_inv = np.linalg.inv(self.get_R(i))
+            except np.linalg.LinAlgError:
+                R_inv = np.linalg.pinv(self.get_R(i))
+
             temp = np.vstack((-np.transpose(G_t), np.ones(G_t.shape)))
-            temp = np.matmul(temp, np.linalg.inv(self.get_R(i)))
+            temp = np.matmul(temp, R_inv)
 
             self.info_matrix[min_idx:max_idx , min_idx:max_idx] += \
                 np.matmul(temp, np.hstack((-G_t, np.ones(G_t.shape))))
@@ -334,7 +340,7 @@ class Robot():
         self.info_matrix[1,1] = sys.float_info.max
         self.info_matrix[2,2] = sys.float_info.max
         
-        # self.linearize_controls()
+        self.linearize_controls()
         self.linearize_measurements()
 
     def run_slam(self):
