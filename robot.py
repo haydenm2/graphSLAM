@@ -114,7 +114,7 @@ class Robot():
             self.range_tr = np.zeros((self.num_states, self.num_lm))
             self.bearing_tr = np.zeros(self.range_tr.shape)
             self.num_measurements = self.range_tr.shape[0]
-            for i in range(1,self.num_measurements):
+            for i in range(0,self.num_measurements):
                 for j in range(self.num_lm):
                     x_diff = self.lm_x[j] - self.X_tr[0,i]
                     y_diff = self.lm_y[j] - self.X_tr[1,i]
@@ -281,7 +281,7 @@ class Robot():
                 np.matmul(temp, x_hat - np.matmul(G_t, self.mu[:,i-1]))
 
     def linearize_measurements(self):
-        for i in range(1,self.num_measurements):
+        for i in range(0,self.num_measurements):
             for j in range(self.num_lm):
                 state_idx = 3 * i
                 lm_idx = (3 * self.num_states) + (2 * j)
