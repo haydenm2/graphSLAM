@@ -1,22 +1,15 @@
 import numpy as np
 from scipy.io import loadmat
 import sys
+import pdb
 
 class Robot():
     def __init__(self, data_file):
         self.save_data(data_file)
 
-        # control noise
-        std_dev_v = .15    # m/s
-        std_dev_om = .1    # rad/s
-        self.M_t = np.array([
-                                [std_dev_v, 0],
-                                [0,         std_dev_om]
-                            ])
-
         # measurement noise
-        std_dev_range = .2      # m
-        std_dev_bearing = .1    # rad
+        std_dev_range = .1      # m
+        std_dev_bearing = .05   # rad
         var_range = std_dev_range * std_dev_range
         var_bearing = std_dev_bearing * std_dev_bearing
         self.Q_t = np.array([
@@ -24,51 +17,107 @@ class Robot():
                                 [ 0,         var_bearing ]
                             ])
 
-        # initial condition
-        self.mu = np.zeros(self.X_tr.shape)
-        self.mu[:,0] = self.X_tr[:,0]
-
         # 3 dimensions for pose, and dimension for each landmark
         d = (self.num_states*3) + (self.num_lm*2)
         self.info_matrix = np.zeros((d,d))
         self.info_vec = np.zeros(d)
 
     def save_data(self, file):
-        f = loadmat(file)
-        # true states (x, y, theta)
-        self.X_tr = f['X_tr']
-        self.num_states = self.X_tr.shape[1]
-        # measurements for true states (includes measurement noise)
-        self.range_tr = f['range_tr']
-        self.bearing_tr = f['bearing_tr']
-        assert(self.range_tr.shape == self.bearing_tr.shape)
-        self.num_measurements = self.range_tr.shape[0]
-        # command velocities
-        self.v_c = f['v_c']
-        self.om_c = f['om_c']
-        self.v_c = self.v_c[0,:]
-        self.om_c = self.om_c[0,:]
-        assert(self.v_c.size == self.om_c.size)
-        # actual velocities (with noise)
-        self.v = f['v']
-        self.om = f['om']
-        self.v = self.v[0,:]
-        self.om = self.om[0,:]
-        assert((self.v_c.size == self.om_c.size) and (self.v.size == self.v_c.size))
-        self.num_controls = self.v.size
-        # times
-        self.t = f['t']
-        self.t = self.t[0,:]
-        # timestep
-        self.dt = self.t[1] - self.t[0]
-        # landmarks
-        lms = f['m']
-        self.lm_x = lms[0,:]
-        self.lm_y = lms[1,:]
-        assert(self.lm_x.size == self.lm_y.size)
-        self.num_lm = self.lm_x.size
+        file = None
+        if file is not None:
+            f = loadmat(file)
+            # true states (x, y, theta)
+            self.X_tr = f['X_tr']
+            self.num_states = self.X_tr.shape[1]
+            # measurements for true states (includes measurement noise)
+            self.range_tr = f['range_tr']
+            self.bearing_tr = f['bearing_tr']
+            assert(self.range_tr.shape == self.bearing_tr.shape)
+            self.num_measurements = self.range_tr.shape[0]
+            # command velocities
+            self.v_c = f['v_c']
+            self.om_c = f['om_c']
+            self.v_c = self.v_c[0,:]
+            self.om_c = self.om_c[0,:]
+            assert(self.v_c.size == self.om_c.size)
+            # actual velocities (with noise)
+            self.v = f['v']
+            self.om = f['om']
+            self.v = self.v[0,:]
+            self.om = self.om[0,:]
+            assert((self.v_c.size == self.om_c.size) and (self.v.size == self.v_c.size))
+            self.num_controls = self.v.size
+            # times
+            self.t = f['t']
+            self.t = self.t[0,:]
+            # timestep
+            self.dt = self.t[1] - self.t[0]
+            # landmarks
+            lms = f['m']
+            self.lm_x = lms[0,:]
+            self.lm_y = lms[1,:]
+            assert(self.lm_x.size == self.lm_y.size)
+            self.num_lm = self.lm_x.size
+            pdb.set_trace()
+        else:
+            self.world_bounds = [-15,20]
+            
+            # noise in the command velocities (translational and rotational)
+            self.a_1 = .1
+            self.a_2 = .01
+            self.a_3 = .01
+            self.a_4 = .1
 
-    def motion_model(self, ctrl_time):
+            # times
+            total_time = 75 # seconds
+            self.dt = .1
+            self.t = np.arange(0, total_time+self.dt, self.dt)
+
+            # command velocities
+            self.v_c = 1 + (.5*np.cos(2*np.pi*.2*self.t))
+            self.om_c = -.2 + (2*np.cos(2*np.pi*1*self.t))
+            assert(self.v_c.size == self.om_c.size)
+            # actual velocities (with noise)
+            self.v = self.v_c + \
+                np.random.normal(scale=np.sqrt( (self.a_1*(self.v_c**2)) + (self.a_2*(self.om_c**2)) ))
+            self.om = self.om_c + \
+                np.random.normal(scale=np.sqrt( (self.a_3*(self.v_c**2)) + (self.a_4*(self.om_c**2)) ))
+            assert((self.v_c.size == self.om_c.size) and (self.v.size == self.v_c.size))
+            self.num_controls = self.v.size
+
+            # states (x, y, theta)
+            self.mu = np.zeros((3,self.num_controls))
+            self.X_tr = np.zeros(self.mu.shape)
+            self.X_tr[2,0] = np.pi / 2 # starting at x=0, y=0, and theta=pi/2
+            self.mu[:,0] = self.X_tr[:,0]
+            self.initialize()
+            self.num_states = self.X_tr.shape[1]
+            for i in range(1,self.num_controls):
+                self.X_tr[:,i] = self.motion_model(i, use_truth=True)
+
+            # landmarks
+            num_landmarks = 20
+            world_markers = np.random.randint(low=self.world_bounds[0]+1, 
+                high=self.world_bounds[1], size=(2,num_landmarks))
+            self.lm_x = world_markers[0,:]
+            self.lm_y = world_markers[1,:]
+            assert(self.lm_x.size == self.lm_y.size)
+            self.num_lm = self.lm_x.size
+
+            # measurements for the true states (includes measurement noise)
+            self.range_tr = np.zeros((self.num_states, self.num_lm))
+            self.bearing_tr = np.zeros(self.range_tr.shape)
+            self.num_measurements = self.range_tr.shape[0]
+            for i in range(1,self.num_measurements):
+                for j in range(self.num_lm):
+                    x_diff = self.lm_x[j] - self.X_tr[0,i]
+                    y_diff = self.lm_y[j] - self.X_tr[1,i]
+                    r = np.sqrt((x_diff * x_diff) + (y_diff * y_diff))
+                    b = np.arctan2(y_diff,x_diff) - self.X_tr[2,i]
+                    self.range_tr[i,j] = r
+                    self.bearing_tr[i,j] = b
+
+    def motion_model(self, ctrl_time, use_truth=False):
         ''' 
         samples the motion model with control at time ctrl_time.
         the predicted state at ctrl_time-1 must be defined.
@@ -77,11 +126,23 @@ class Robot():
         vel = self.v_c[ctrl_time]
         angular_vel = self.om_c[ctrl_time]
         theta = self.mu[-1,ctrl_time-1]
+
+        if use_truth:
+            vel = self.v[ctrl_time]
+            angular_vel = self.om[ctrl_time]
+            theta = self.X_tr[-1,ctrl_time-1]
+
+        ratio = vel / angular_vel
+        angular_step = theta + (angular_vel*self.dt)
         motion_vec = np.array([
-                                vel * np.cos(theta) * self.dt,
-                                vel * np.sin(theta) * self.dt,
+                                (-ratio * np.sin(theta)) + (ratio * np.sin(angular_step)),
+                                (ratio * np.cos(theta)) - (ratio * np.cos(angular_step)),
                                 angular_vel * self.dt
                             ])
+
+        if use_truth:
+            return self.X_tr[:,ctrl_time-1] + motion_vec
+
         return self.mu[:,ctrl_time-1] + motion_vec
 
     def get_G(self, ctrl_time):
@@ -97,16 +158,46 @@ class Robot():
                             [0, 0,  1]
                         ])
 
+    # def get_V(self, ctrl_time):
+    #     '''
+    #     returns V_t corresponding to the time ctrl_time.
+    #     the predicted state at ctrl_time-1 must be defined
+    #     '''
+    #     theta = self.mu[-1,ctrl_time-1]
+    #     return np.array([
+    #                         [ np.cos(theta)*self.dt, 0 ],
+    #                         [ np.sin(theta)*self.dt, 0 ],
+    #                         [ 0,                     self.dt ]
+    #                     ])
+
     def get_V(self, ctrl_time):
         '''
         returns V_t corresponding to the time ctrl_time.
         the predicted state at ctrl_time-1 must be defined
         '''
-        theta = self.mu[-1,ctrl_time-1]
+        v = self.v_c[ctrl_time]
+        w = self.om_c[ctrl_time]
+        angle = self.mu[-1,ctrl_time-1]
+        angular_step = angle + (w*self.dt)
+
+        v_0_0 = ( -np.sin(angle) + np.sin(angular_step) ) / w
+        v_0_1 = ( (v * (np.sin(angle) - np.sin(angular_step))) / (w*w) ) + \
+            ( (v * np.cos(angular_step) * self.dt) / w )
+        v_1_0 = ( np.cos(angle) - np.cos(angular_step) ) / w
+        v_1_1 = ( -(v * (np.cos(angle) - np.cos(angular_step))) / (w*w) ) + \
+            ( (v * np.sin(angular_step) * self.dt) / w )
         return np.array([
-                            [ np.cos(theta)*self.dt, 0 ],
-                            [ np.sin(theta)*self.dt, 0 ],
-                            [ 0,                     self.dt ]
+                        [v_0_0, v_0_1],
+                        [v_1_0, v_1_1],
+                        [0, self.dt]
+                        ])
+
+    def get_M(self, ctrl_time):
+        v = self.v_c[ctrl_time]
+        w = self.om_c[ctrl_time]
+        return np.array([
+                        [(self.a_1 * v*v) + (self.a_2 * w*w), 0],
+                        [0, (self.a_3 * v*v) + (self.a_4 * w*w)]
                         ])
 
     def get_R(self, ctrl_time):
@@ -115,7 +206,7 @@ class Robot():
         the predicted state at ctrl_time-1 must be defined
         '''
         V_t = self.get_V(ctrl_time)
-        return np.matmul(np.matmul(V_t, self.M_t), np.transpose(V_t))
+        return np.matmul(np.matmul(V_t, self.get_M(ctrl_time)), np.transpose(V_t))
 
     def wrap(self, angle):
         '''
@@ -129,7 +220,6 @@ class Robot():
 
     def linearize_controls(self):
         for i in range(1,self.num_controls):
-            print("i is",i)
             curr_state_idx = 3 * i
             min_idx = curr_state_idx - 3
             max_idx = curr_state_idx + 3
@@ -146,7 +236,6 @@ class Robot():
             
             self.info_vec[min_idx:max_idx] += \
                 np.matmul(temp, x_hat - np.matmul(G_t, self.mu[:,i-1]))
-            break
 
     def linearize_measurements(self):
         for i in range(1,self.num_measurements):
@@ -208,11 +297,11 @@ class Robot():
         self.info_matrix[1,1] = sys.float_info.max
         self.info_matrix[2,2] = sys.float_info.max
         
-        self.linearize_controls()
+        # self.linearize_controls()
         self.linearize_measurements()
 
     def run_slam(self):
-        self.initialize()
+        # self.initialize()
         converged = False
         while not converged:
             self.linearize()
