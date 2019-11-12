@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.io import loadmat
+import sys
 
 class Robot():
     def __init__(self, data_file):
@@ -41,6 +42,7 @@ class Robot():
         self.range_tr = f['range_tr']
         self.bearing_tr = f['bearing_tr']
         assert(self.range_tr.shape == self.bearing_tr.shape)
+        self.num_measurements = self.range_tr.shape[0]
         # command velocities
         self.v_c = f['v_c']
         self.om_c = f['om_c']
@@ -115,31 +117,99 @@ class Robot():
         V_t = self.get_V(ctrl_time)
         return np.matmul(np.matmul(V_t, self.M_t), np.transpose(V_t))
 
+    def wrap(self, angle):
+        '''
+        map angle between -pi and pi
+        '''
+        return (angle + np.pi) % (2 * np.pi) - np.pi
+
     def initialize(self):
         for i in range(1,self.num_controls):
             self.mu[:,i] = self.motion_model(i)
+
+    def linearize_controls(self):
+        for i in range(1,self.num_controls):
+            print("i is",i)
+            curr_state_idx = 3 * i
+            min_idx = curr_state_idx - 3
+            max_idx = curr_state_idx + 3
+
+            x_hat = self.motion_model(i)
+            
+            G_t = self.get_G(i)
+
+            temp = np.vstack((-np.transpose(G_t), np.ones(G_t.shape)))
+            temp = np.matmul(temp, np.linalg.inv(self.get_R(i)))
+
+            self.info_matrix[min_idx:max_idx , min_idx:max_idx] += \
+                np.matmul(temp, np.hstack((-G_t, np.ones(G_t.shape))))
+            
+            self.info_vec[min_idx:max_idx] += \
+                np.matmul(temp, x_hat - np.matmul(G_t, self.mu[:,i-1]))
+            break
+
+    def linearize_measurements(self):
+        for i in range(1,self.num_measurements):
+            for j in range(self.num_lm):
+                state_idx = 3 * i
+                lm_idx = (3 * self.num_states) + (2 * j)
+
+                diff_x = self.lm_x[j] - self.mu[0,i]
+                diff_y = self.lm_y[j] - self.mu[1,i]
+                delta = np.array([
+                                    [diff_x],
+                                    [diff_y]
+                                ])
+                
+                q = np.matmul(np.transpose(delta), delta).item(0)
+                sqrt_q = np.sqrt(q)
+
+                z_hat = np.matrix([
+                                    [sqrt_q],
+                                    [np.arctan2(diff_y,diff_x) - self.mu[2,i]]
+                                ])
+
+                H_t = np.array([
+                                [-sqrt_q*diff_x, -sqrt_q*diff_y, 0, sqrt_q*diff_x, sqrt_q*diff_y],
+                                [diff_y, -diff_x, -q, -diff_y, diff_x]
+                            ])
+                H_t *= 1 / q
+
+                temp = np.matmul(np.transpose(H_t), np.linalg.inv(self.Q_t))
+                
+                a = np.matmul(temp, H_t)
+                self.info_matrix[state_idx:state_idx+3 , state_idx:state_idx+3] += a[0:3 , 0:3]
+                self.info_matrix[lm_idx:lm_idx+2 , state_idx:state_idx+3] += a[3: , 0:3]
+                self.info_matrix[state_idx:state_idx+3 , lm_idx:lm_idx+2] += a[0:3 , 3:]
+                self.info_matrix[lm_idx:lm_idx+2 , lm_idx:lm_idx+2] += a[3: , 3:]
+
+                z_diff = np.array([
+                                    [self.range_tr[i,j] - z_hat[0,0]],
+                                    [self.wrap(self.bearing_tr[i,j] - z_hat[1,0])]
+                                ])
+                belief_vec = np.array([
+                                        self.mu[0,i], 
+                                        self.mu[1,i], 
+                                        self.mu[2,i], 
+                                        self.lm_x[j], 
+                                        self.lm_y[j]
+                                    ]).reshape(-1,1)
+                a = np.matmul(temp, z_diff + np.matmul(H_t, belief_vec))
+                self.info_vec[state_idx:state_idx+3] += a[0:3,0]
+                self.info_vec[lm_idx:lm_idx+2] += a[3:,0]
 
     def linearize(self):
         self.info_matrix[:,:] = 0
         self.info_vec[:] = 0
 
-        # initial state = infinity
-        self.info_matrix[0,0] = np.inf
-        self.info_matrix[1,1] = np.inf
-        self.info_matrix[2,2] = np.inf
+        # initial state = infinity (large float for computational purposes)
+        # https://stackoverflow.com/questions/3477283/what-is-the-maximum-float-in-python
+        self.info_matrix[0,0] = sys.float_info.max
+        self.info_matrix[1,1] = sys.float_info.max
+        self.info_matrix[2,2] = sys.float_info.max
         
-        for i in range(1,self.num_controls):
-            x_hat = self.motion_model(i)
-            
-            G_t = self.get_G(i)
-
-            a = np.vstack((-np.transpose(G_t), np.ones(G_t.shape)))
-            a = np.matmul(a, np.linalg.inv(self.get_R(i)))
-
-            temp = np.matmul(a, np.hstack((-G_t, np.ones(G_t.shape))))
-            print(temp)
-            print(temp.shape)
-            break
+        self.linearize_controls()
+        self.linearize_measurements()
 
     def run_slam(self):
         self.initialize()
