@@ -11,10 +11,13 @@ class Robot():
 
         # 3 dimensions for pose, and dimension for each landmark
         d = (self.num_states*3) + (self.num_lm*2)
+        d1 = self.num_states*3
         self.info_matrix = np.zeros((d,d))
         self.info_vec = np.zeros(d)
         self.info_matrix_tilde = np.zeros((d, d))
         self.info_vec_tilde = np.zeros(d)
+        self.cov_final = np.zeros((d1,d1))
+        self.mu_final = np.zeros(d1)
 
     def create_data(self, file):
         self.world_bounds = [-15,20]
@@ -378,12 +381,20 @@ class Robot():
             self.info_matrix_tilde[lm_idx:lm_idx + 2, :] *= 0
             self.info_matrix_tilde[:, lm_idx:lm_idx + 2] *= 0
 
+    def solve(self):
+        try:
+            self.cov_final = np.linalg.inv(self.info_matrix_tilde[0:3*self.num_states+1, 0:3*self.num_states+1])
+        except np.linalg.LinAlgError:
+            self.cov_final = np.linalg.pinv(self.info_matrix_tilde[0:3*self.num_states+1, 0:3*self.num_states+1])
+        self.mu_final = self.cov_final @ self.info_vec_tilde[0:3*self.num_states+1].reshape((len(self.info_vec_tilde[0:3*self.num_states+1]), 1))
+
     def run_slam(self):
         self.initialize()
         converged = False
         while not converged:
             self.linearize()
             self.reduce()
+            self.solve()
             break
 
         # DEBUG: Display info_matrix map showing non-zero values in black
