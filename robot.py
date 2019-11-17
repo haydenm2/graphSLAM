@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.io import loadmat
 import sys
+import matplotlib.pyplot as plt
 import pdb
 
 class Robot():
@@ -12,6 +13,8 @@ class Robot():
         d = (self.num_states*3) + (self.num_lm*2)
         self.info_matrix = np.zeros((d,d))
         self.info_vec = np.zeros(d)
+        self.info_matrix_tilde = np.zeros((d, d))
+        self.info_vec_tilde = np.zeros(d)
 
     def create_data(self, file):
         self.world_bounds = [-15,20]
@@ -281,7 +284,7 @@ class Robot():
                 np.matmul(temp, x_hat - np.matmul(G_t, self.mu[:,i-1]))
 
     def linearize_measurements(self):
-        for i in range(0,self.num_measurements):
+        for i in range(self.num_measurements):
             for j in range(self.num_lm):
                 state_idx = 3 * i
                 lm_idx = (3 * self.num_states) + (2 * j)
@@ -343,9 +346,49 @@ class Robot():
         self.linearize_controls()
         self.linearize_measurements()
 
+    def reduce(self):
+        self.info_matrix_tilde = self.info_matrix
+        self.info_vec_tilde = self.info_vec
+
+        for j in range(self.num_lm):
+            poses_seen = []
+            for i in range(self.num_measurements):
+                state_idx = 3 * i
+                lm_idx = (3 * self.num_states) + (2 * j)
+
+                # store states where landmark was seen, pass those where not
+                if not(np.any(self.info_matrix_tilde[lm_idx:lm_idx + 2, state_idx:state_idx + 3])):
+                    continue
+                else:
+                    poses_seen.append(i)
+            for k in poses_seen:
+                state_idx = 3 * k
+                lm_idx = (3 * self.num_states) + (2 * j)
+                mat_Tj = self.info_matrix_tilde[state_idx:state_idx + 3, lm_idx:lm_idx + 2]
+                mat_jj = self.info_matrix_tilde[lm_idx:lm_idx + 2, lm_idx:lm_idx + 2]
+                vec_j = self.info_vec[lm_idx:lm_idx + 2].reshape((2, 1))
+                vec_sub = mat_Tj @ np.linalg.inv(mat_jj) @ vec_j
+                mat_sub = mat_Tj @ np.linalg.inv(mat_jj) @ mat_Tj.transpose()
+                for l in poses_seen:
+                    state_sub_idx = 3 * l
+                    self.info_vec_tilde[state_sub_idx:state_sub_idx + 3] -= vec_sub.flatten()
+                    self.info_matrix_tilde[state_idx:state_idx + 3, state_sub_idx:state_sub_idx + 3] -= mat_sub
+                    self.info_matrix_tilde[state_sub_idx:state_sub_idx + 3, state_idx:state_idx + 3] -= mat_sub
+            self.info_vec_tilde[lm_idx:lm_idx + 2] *= 0
+            self.info_matrix_tilde[lm_idx:lm_idx + 2, :] *= 0
+            self.info_matrix_tilde[:, lm_idx:lm_idx + 2] *= 0
+
     def run_slam(self):
         self.initialize()
         converged = False
         while not converged:
             self.linearize()
+            self.reduce()
             break
+
+        # DEBUG: Display info_matrix map showing non-zero values in black
+        lim = 915
+        map = np.equal(self.info_matrix[0:lim,0:lim], 0)
+        plt.imshow((np.logical_not(map)).astype(float), 'Greys')
+        plt.grid(True)
+        plt.show()
