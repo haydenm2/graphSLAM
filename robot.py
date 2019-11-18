@@ -342,9 +342,12 @@ class Robot():
 
         # initial state = infinity (large float for computational purposes)
         # https://stackoverflow.com/questions/3477283/what-is-the-maximum-float-in-python
-        self.info_matrix[0,0] = sys.float_info.max
-        self.info_matrix[1,1] = sys.float_info.max
-        self.info_matrix[2,2] = sys.float_info.max
+        # self.info_matrix[0, 0] = sys.float_info.max
+        # self.info_matrix[1, 1] = sys.float_info.max
+        # self.info_matrix[2, 2] = sys.float_info.max
+        self.info_matrix[0, 0] = 1e5
+        self.info_matrix[1, 1] = 1e5
+        self.info_matrix[2, 2] = 1e5
         
         self.linearize_controls()
         self.linearize_measurements()
@@ -364,19 +367,23 @@ class Robot():
                     continue
                 else:
                     poses_seen.append(i)
+
+            # iterate through poses where landmark j is seen and reassign pose-landmark relations to pose-pose relations
             for k in poses_seen:
-                state_idx = 3 * k
-                lm_idx = (3 * self.num_states) + (2 * j)
+                state_idx = 3 * k  # index of state where landmark relationship is being removed
+                lm_idx = (3 * self.num_states) + (2 * j)  # index of landmark being removed
                 mat_Tj = self.info_matrix_tilde[state_idx:state_idx + 3, lm_idx:lm_idx + 2]
                 mat_jj = self.info_matrix_tilde[lm_idx:lm_idx + 2, lm_idx:lm_idx + 2]
                 vec_j = self.info_vec[lm_idx:lm_idx + 2].reshape((2, 1))
                 vec_sub = mat_Tj @ np.linalg.inv(mat_jj) @ vec_j
                 mat_sub = mat_Tj @ np.linalg.inv(mat_jj) @ mat_Tj.transpose()
                 for l in poses_seen:
-                    state_sub_idx = 3 * l
+                    state_sub_idx = 3 * l  # index of state being subtracted from
                     self.info_vec_tilde[state_sub_idx:state_sub_idx + 3] -= vec_sub.flatten()
                     self.info_matrix_tilde[state_idx:state_idx + 3, state_sub_idx:state_sub_idx + 3] -= mat_sub
-                    self.info_matrix_tilde[state_sub_idx:state_sub_idx + 3, state_idx:state_idx + 3] -= mat_sub
+                    self.info_matrix_tilde[state_sub_idx:state_sub_idx + 3, state_idx:state_idx + 3] -= mat_sub.transpose()
+
+            # clear elements associated with landmark j
             self.info_vec_tilde[lm_idx:lm_idx + 2] *= 0
             self.info_matrix_tilde[lm_idx:lm_idx + 2, :] *= 0
             self.info_matrix_tilde[:, lm_idx:lm_idx + 2] *= 0
@@ -387,6 +394,7 @@ class Robot():
         except np.linalg.LinAlgError:
             self.cov_final = np.linalg.pinv(self.info_matrix_tilde[0:3*self.num_states+1, 0:3*self.num_states+1])
         self.mu_final = self.cov_final @ self.info_vec_tilde[0:3*self.num_states+1].reshape((len(self.info_vec_tilde[0:3*self.num_states+1]), 1))
+        a = 1
 
     def run_slam(self):
         self.initialize()
@@ -397,9 +405,9 @@ class Robot():
             self.solve()
             break
 
-        # DEBUG: Display info_matrix map showing non-zero values in black
-        lim = 915
-        map = np.equal(self.info_matrix[0:lim,0:lim], 0)
-        plt.imshow((np.logical_not(map)).astype(float), 'Greys')
-        plt.grid(True)
-        plt.show()
+        # # DEBUG: Display info_matrix map showing non-zero values in black
+        # lim = 915
+        # map = np.equal(self.info_matrix[0:lim,0:lim], 0)
+        # plt.imshow((np.logical_not(map)).astype(float), 'Greys')
+        # plt.grid(True)
+        # plt.show()
