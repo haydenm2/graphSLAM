@@ -275,7 +275,7 @@ class Robot():
 
             x_hat = self.motion_model(i)
 
-            G_t = self.get_G(i)
+            G_t = self.get_G(i-1)
 
             R_inv = None
             try:
@@ -283,11 +283,11 @@ class Robot():
             except np.linalg.LinAlgError:
                 R_inv = np.linalg.pinv(self.get_R(i))
 
-            temp = np.vstack((-np.transpose(G_t), np.ones(G_t.shape)))
+            temp = np.vstack((-np.transpose(G_t), np.eye(G_t.shape[0])))
             temp = np.matmul(temp, R_inv)
 
             self.info_matrix[min_idx:max_idx, min_idx:max_idx] += \
-                np.matmul(temp, np.hstack((-G_t, np.ones(G_t.shape))))
+                np.matmul(temp, np.hstack((-G_t, np.eye(G_t.shape[0]))))
 
             self.info_vec[min_idx:max_idx] += \
                 np.matmul(temp, x_hat - np.matmul(G_t, self.mu[:, i - 1]))
@@ -308,9 +308,9 @@ class Robot():
                 q = np.matmul(np.transpose(delta), delta).item(0)
                 sqrt_q = np.sqrt(q)
 
-                z_hat = np.matrix([
+                z_hat = np.array([
                     [sqrt_q],
-                    [np.arctan2(diff_y, diff_x) - self.mu[2, i]]
+                    [self.wrap(np.arctan2(diff_y, diff_x) - self.mu[2, i])]
                 ])
 
                 H_t = np.array([
@@ -368,44 +368,47 @@ class Robot():
 
             # ---------------- ASSUMING ALL LANDMARKS VISIBLE ALWAYS --------------------------
 
-            # mat_Tj = self.info_matrix_tilde[0:3 * self.num_states, lm_idx:lm_idx + 2]
-            # mat_jj = self.info_matrix_tilde[lm_idx:lm_idx + 2, lm_idx:lm_idx + 2]
-            # vec_j = self.info_vec[lm_idx:lm_idx + 2].reshape((2, 1))
-            # vec_sub = mat_Tj @ np.linalg.inv(mat_jj) @ vec_j
-            # mat_sub = mat_Tj @ np.linalg.inv(mat_jj) @ mat_Tj.transpose()
-            #
-            # self.info_vec_tilde[0:3*self.num_states] -= vec_sub.flatten()
-            # self.info_matrix_tilde[0:3*self.num_states, 0:3*self.num_states] -= mat_sub
+            mat_Tj = self.info_matrix_tilde[0:3 * self.num_states, lm_idx:lm_idx + 2]
+            mat_jj = self.info_matrix_tilde[lm_idx:lm_idx + 2, lm_idx:lm_idx + 2]
+            vec_j = self.info_vec[lm_idx:lm_idx + 2].reshape((2, 1))
+            temp = mat_Tj @ np.linalg.inv(mat_jj)
+            vec_sub = temp @ vec_j
+            mat_sub = temp @ mat_Tj.transpose()
+            for i in range(self.num_states):
+                mat_sub[3*i:3*i+3, 3*i:3*i+3] = 0
+
+            self.info_vec_tilde[0:3*self.num_states] -= vec_sub.flatten()
+            self.info_matrix_tilde[0:3*self.num_states, 0:3*self.num_states] -= mat_sub
 
             # ---------------- ASSUMING PARTIAL LANDMARK VISIBILITY --------------------------
 
-            for i in range(self.num_measurements):
-                state_idx = 3 * i
-
-                # store states where landmark was seen, pass those where not
-                if not (np.any(self.info_matrix_tilde[lm_idx:lm_idx + 2, state_idx:state_idx + 3])):
-                    continue
-                else:
-                    poses_seen.append(i)
-
-            # iterate through poses where landmark j is seen and reassign pose-landmark relations to pose-pose relations
-            for k in poses_seen:
-                state_idx = 3 * k  # index of state where landmark relationship is being removed
-                mat_Tj = self.info_matrix_tilde[state_idx:state_idx + 3, lm_idx:lm_idx + 2]
-                mat_jj = self.info_matrix_tilde[lm_idx:lm_idx + 2, lm_idx:lm_idx + 2]
-                vec_j = self.info_vec[lm_idx:lm_idx + 2].reshape((2, 1))
-                vec_sub = mat_Tj @ np.linalg.inv(mat_jj) @ vec_j
-                mat_sub = mat_Tj @ np.linalg.inv(mat_jj) @ mat_Tj.transpose()
-                # subtract pose-landmark j relationship from all other poses who have seen landmark j
-                for l in poses_seen:
-                    # do not subtract pose-landmark data from self
-                    if k == l:
-                        continue
-                    state_sub_idx = 3 * l  # index of state being subtracted from
-                    self.info_vec_tilde[state_sub_idx:state_sub_idx + 3] -= vec_sub.flatten()
-                    self.info_matrix_tilde[state_idx:state_idx + 3, state_sub_idx:state_sub_idx + 3] -= mat_sub
-                    self.info_matrix_tilde[state_sub_idx:state_sub_idx + 3,
-                    state_idx:state_idx + 3] -= mat_sub.transpose()
+            # for i in range(self.num_measurements):
+            #     state_idx = 3 * i
+            #
+            #     # store states where landmark was seen, pass those where not
+            #     if not (np.any(self.info_matrix_tilde[lm_idx:lm_idx + 2, state_idx:state_idx + 3])):
+            #         continue
+            #     else:
+            #         poses_seen.append(i)
+            #
+            # # iterate through poses where landmark j is seen and reassign pose-landmark relations to pose-pose relations
+            # for k in poses_seen:
+            #     state_idx = 3 * k  # index of state where landmark relationship is being removed
+            #     mat_Tj = self.info_matrix_tilde[state_idx:state_idx + 3, lm_idx:lm_idx + 2]
+            #     mat_jj = self.info_matrix_tilde[lm_idx:lm_idx + 2, lm_idx:lm_idx + 2]
+            #     vec_j = self.info_vec[lm_idx:lm_idx + 2].reshape((2, 1))
+            #     vec_sub = mat_Tj @ np.linalg.inv(mat_jj) @ vec_j
+            #     mat_sub = mat_Tj @ np.linalg.inv(mat_jj) @ mat_Tj.transpose()
+            #     # subtract pose-landmark j relationship from all other poses who have seen landmark j
+            #     for l in poses_seen:
+            #         # do not subtract pose-landmark data from self
+            #         if k == l:
+            #             continue
+            #         state_sub_idx = 3 * l  # index of state being subtracted from
+            #         self.info_vec_tilde[state_sub_idx:state_sub_idx + 3] -= vec_sub.flatten()
+            #         self.info_matrix_tilde[state_idx:state_idx + 3, state_sub_idx:state_sub_idx + 3] -= mat_sub
+            #         self.info_matrix_tilde[state_sub_idx:state_sub_idx + 3,
+            #         state_idx:state_idx + 3] -= mat_sub.transpose()
 
             # ----------------------------------------------------------------------------------------------
 
@@ -458,15 +461,15 @@ class Robot():
             self.linearize()
             self.reduce()
             self.solve()
-            self.calculate_cost()
-            if self.J < self.threshold:
-                converged = True
+            # self.calculate_cost()
+            # if self.J < self.threshold:
+            #     converged = True
             break
 
-        # DEBUG: Display info_matrix map showing non-zero values in black
-        lim = 915  # plotting limit for selectively plotting covariance matrix
-        map = np.equal(self.info_matrix[0:lim, 0:lim], 0)
-        plt.figure()
-        plt.imshow((np.logical_not(map)).astype(float), 'Greys')
-        plt.grid(True)
-        plt.show()
+        # # DEBUG: Display info_matrix map showing non-zero values in black
+        # lim = 915  # plotting limit for selectively plotting covariance matrix
+        # map = np.equal(self.info_matrix[0:lim, 0:lim], 0)
+        # plt.figure()
+        # plt.imshow((np.logical_not(map)).astype(float), 'Greys')
+        # plt.grid(True)
+        # plt.show()
