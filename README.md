@@ -1,2 +1,2 @@
 # graphSLAM
-Implementation of graphSLAM in Python 3 according to Probablistic Robotics
+Implementation of graphSLAM in C++ using g2o library
