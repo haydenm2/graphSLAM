@@ -14,35 +14,41 @@ if __name__ == "__main__":
     files.append(parser.parse_args().pre_file)
     files.append(parser.parse_args().post_file)
 
-    node = {}   # maps the node ID to the node's (x,y) coordinate
-
-    ax1 = plt.subplot(121)
-    ax1.set_title("Before Optimization")
-    ax2 = plt.subplot(122)
-    ax2.set_title("After Optimization")
+    g = 128 / 255
+    gray = (g,g,g)
+    f, axes = plt.subplots(nrows=1, ncols=2)
 
     for i,f in enumerate(files):
-        curr_ax = ax1 if i == 0 else ax2
+        curr_ax = axes[i]
+        curr_ax.set_facecolor(gray)
+
+        vertices = {}  # maps the vertexs ID to the vertex's (x,y) coordinate
 
         with open(f) as fp:
             for line in fp:
                 line = line.split()
                 
-                # save all poses
-                if "VERTEX" in line[0] and "SE2" in line[0]:
+                # save all vertices
+                if "VERTEX" in line[0]:
                     v_id = line[1]
                     x = float(line[2])
                     y = float(line[3])
 
-                    node[v_id] = (x,y)
+                    vertices[v_id] = (x,y)
+                # save links between vertices
+                elif "EDGE" in line[0]:
+                    zorder = 1
+                    color = 'r'
 
-                # save links between poses
-                elif "EDGE" in line[0] and "POINT" not in line[0]:
-                    v_out = node[line[1]]
-                    v_in = node[line[2]]
+                    v_out = vertices[line[1]]
+                    v_in = vertices[line[2]]
+
+                    if "POINT" in line[0]:
+                        zorder = 0
+                        color = 'w'
 
                     x_vals = [v_out[0], v_in[0]]
                     y_vals = [v_out[1], v_in[1]]
-                    curr_ax.plot(x_vals, y_vals, 'r')
+                    curr_ax.plot(x_vals, y_vals, color=color, zorder=zorder)
 
     plt.show()
