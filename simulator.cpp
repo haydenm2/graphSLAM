@@ -68,14 +68,14 @@ namespace g2o {
 
       double maxSensorRangeLandmarks = 2.5 * stepLen;
 
-      int landMarksPerSquareMeter = 0.5;
-      double observationProb = 0.8;
+      int landMarksPerSquareMeter = 1;
+      double observationProb = 0.7;
 
       int landmarksRange=2;
 
-      Vector2d transNoise(0.1, 0.1);
+      Vector2d transNoise(1.0, 1.0);
       double rotNoise = DEG2RAD(2.);
-      Vector2d landmarkNoise(0.1, 0.1);
+      Vector2d landmarkNoise(1.0, 1.0);
 
       Vector2d bound(boundArea, boundArea);
 
@@ -292,7 +292,7 @@ namespace g2o {
       switch (type) {
         case 0:
           v = 10 + (.5*cos(2 * M_PI * 0.2 * t));
-          w = 0.2 + (2*cos(2 * M_PI * 0.06 * t));
+          w = -0.2 + (2*cos(2 * M_PI * 0.06 * t));
           return SE2(v * dt, 0, w * dt);
         case 1:
           v = 1 + (.5*cos(2 * M_PI * 0.2 * t));

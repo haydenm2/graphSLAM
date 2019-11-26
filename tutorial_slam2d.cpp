@@ -51,7 +51,7 @@ int main()
   // TODO simulate different sensor offset
   // simulate a robot observing landmarks while travelling on a grid
   SE2 sensorOffsetTransf(0.0, 0.0, 0.0);
-  int numNodes = 300;
+  int numNodes = 400;
   Simulator simulator;
   simulator.simulate(numNodes, sensorOffsetTransf);
 
@@ -82,7 +82,7 @@ int main()
   cerr << "Optimization: Adding robot poses ... ";
   for (size_t i = 0; i < simulator.poses().size(); ++i) {
     const Simulator::GridPose& p = simulator.poses()[i];
-    const SE2& t = p.simulatorPose; 
+    const SE2& t = p.simulatorPose;
     VertexSE2* robot =  new VertexSE2;
     robot->setId(p.id);
     robot->setEstimate(t);
