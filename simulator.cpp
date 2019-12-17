@@ -293,15 +293,15 @@ namespace g2o {
         case 0:
           v = 10 + (.5*cos(2 * M_PI * 0.2 * t));
           w = -0.2 + (2*cos(2 * M_PI * 0.06 * t));
-          return SE2(v * dt, 0, w * dt);
+          return SE2(v * dt, v * dt, w * dt);
         case 1:
           v = 1 + (.5*cos(2 * M_PI * 0.2 * t));
-          w = 0.2 + (2*cos(2 * M_PI * 0.6 * t));
-          return SE2(v * dt, 0, w * dt);
+          w = 1 + (2*cos(2 * M_PI * 0.6 * t));
+          return SE2(v * dt, v * dt, w * dt);
         default:
           v = 1 + (.5*cos(2 * M_PI * 0.2 * t));
           w = 0.2 + (2*cos(2 * M_PI * 0.6 * t));
-          return SE2(v * dt, 0, w * dt);
+          return SE2(v * dt, v * dt, w * dt);
       }
     }
 
